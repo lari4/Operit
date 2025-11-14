@@ -808,3 +808,102 @@ These prompts define personality modes and character-based interactions in Operi
 
 ---
 
+## 6. Context & Enhancement Prompts
+
+**File Location:** `app/src/main/java/com/ai/assistance/operit/api/chat/enhance/ConversationService.kt`
+
+These prompts provide contextual information and auxiliary functions to enhance conversations.
+
+### 6.1 User Preference Text Building
+
+**Purpose:** Dynamically builds a human-readable description of user preferences from the profile data, including age, gender, personality, occupation, and AI style preferences.
+
+**Usage:** Automatically generated and included in system prompts to personalize AI responses based on user profile.
+
+**Function:** `buildPreferencesText()` in ConversationService.kt:415-459
+
+**Included Fields:**
+- Gender
+- Age (calculated from birth date timestamp)
+- Birth date (formatted as yyyy-MM-dd)
+- Personality traits
+- Identity/role
+- Occupation
+- Expected AI interaction style
+
+**Output Format:**
+```
+性别: [gender]; 年龄: [age]岁; 出生日期: [yyyy-MM-dd]; 性格特点: [personality]; 身份认同: [identity]; 职业: [occupation]; 期待的AI风格: [ai_style]
+```
+
+### 6.2 Translation Prompt
+
+**Purpose:** Translates text to specified target language while preserving tone and style.
+
+**Usage:** Called when translation functionality is invoked by the user.
+
+**Function:** `translateText()` in ConversationService.kt:789-795
+
+**System Prompt:**
+```
+你是一个专业的翻译助手，能够准确翻译各种语言，并保持原文的语气和风格。
+```
+
+**User Prompt:**
+```
+请将以下文本翻译为[target language]，保持原文的语气和风格：
+
+[text to translate]
+
+只返回翻译结果，不要添加任何解释或额外内容。
+```
+
+**Lines:** ConversationService.kt:789-795
+
+### 6.3 Package Description Generation Prompt
+
+**Purpose:** Automatically generates concise, user-friendly descriptions for MCP (Model Context Protocol) tool packages based on their available tools.
+
+**Usage:** Called when a new MCP server/package is added to generate a description for user reference.
+
+**Function:** `generatePackageDescription()` in ConversationService.kt:844-857
+
+**Requirements:**
+1. Concise description, no more than 100 characters
+2. Emphasize main functionality and purpose
+3. Use Chinese language
+4. No technical details, should be easy to understand
+5. Only return description content, no other text
+
+```
+请为名为"[plugin name]"的MCP工具包生成一个简洁的描述。这个工具包包含以下工具：
+
+[list of tool descriptions]
+
+要求：
+1. 描述应该简洁明了，不超过100字
+2. 重点说明工具包的主要功能和用途
+3. 使用中文
+4. 不要包含技术细节，要通俗易懂
+5. 只返回描述内容，不要添加任何其他文字
+
+请生成描述：
+```
+
+**Lines:** ConversationService.kt:844-857
+
+---
+
+## Summary
+
+Operit employs a sophisticated multi-layered prompt system that combines:
+
+1. **Core System Prompts** - Foundational behavior, tool usage, and workspace guidelines
+2. **Functional Prompts** - Task-specific prompts for summarization, file operations, and UI control
+3. **Plan Mode Prompts** - Multi-agent task decomposition and execution
+4. **Memory & Knowledge Graph Prompts** - Advanced knowledge extraction and graph building
+5. **Personality & Character Prompts** - Customizable AI personalities and interaction modes
+6. **Context & Enhancement Prompts** - User personalization and auxiliary functions
+
+The system dynamically composes these prompts based on conversation mode, user preferences, enabled features, and runtime context, allowing for highly flexible and personalized AI interactions while maintaining consistent behavioral standards.
+
