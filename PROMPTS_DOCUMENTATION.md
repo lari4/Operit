@@ -369,3 +369,138 @@ Analyze the inputs, choose the best action to achieve the `Task Goal`, and formu
 
 ---
 
+## 3. Plan Mode Prompts
+
+**File Locations:**
+- `app/src/main/java/com/ai/assistance/operit/api/chat/plan/PlanModeManager.kt`
+- `app/src/main/java/com/ai/assistance/operit/api/chat/plan/TaskExecutor.kt`
+
+Plan mode (also called "Deep Search Mode") allows complex tasks to be broken down into multiple subtasks that can be executed in parallel or sequentially based on dependencies.
+
+### 3.1 Plan Generation Prompt
+
+**Purpose:** Analyzes user requests and breaks them down into an execution plan with multiple subtasks. Generates a JSON structure defining tasks, their dependencies, and a final summary instruction.
+
+**Usage:** Called at the beginning of plan mode execution to create the task execution graph.
+
+**Output Format:** JSON with tasks array and final_summary_instruction.
+
+**Planning Principles:**
+1. Break complex tasks into 3-6 independent subtasks
+2. Each subtask has clear execution instructions
+3. Set reasonable dependencies between tasks, prioritize parallel execution
+4. All task types are set to "chat"
+5. Each instruction should be complete and independently executable
+6. Final summary instruction should integrate all subtask results
+
+**Lines:** PlanModeManager.kt:28-64
+
+```
+你是一个任务规划专家。用户将向你描述一个复杂的任务或问题，你需要将其分解为多个可以并发或顺序执行的子任务。
+
+请按照以下JSON格式返回执行计划：
+
+```json
+{
+  "tasks": [
+    {
+      "id": "task_1",
+      "name": "任务描述",
+      "instruction": "具体的执行指令，这将被发送给AI执行",
+      "dependencies": [],
+      "type": "chat"
+    },
+    {
+      "id": "task_2",
+      "name": "任务描述",
+      "instruction": "具体的执行指令",
+      "dependencies": ["task_1"],
+      "type": "chat"
+    }
+  ],
+  "final_summary_instruction": "根据所有子任务的结果，提供最终的完整回答"
+}
+```
+
+规划原则：
+1. 将复杂任务分解为3-6个相对独立的子任务
+2. 确保每个子任务都有明确的执行指令
+3. 合理设置任务间的依赖关系，优先支持并发执行
+4. 所有任务类型都设为"chat"
+5. 每个instruction应该是一个完整的、可以独立执行的指令
+6. 最终汇总指令应该能够整合所有子任务的结果
+
+请分析用户的请求并生成相应的执行计划。
+```
+
+### 3.2 Task Context Building
+
+**Purpose:** Builds context for individual subtasks by including the original user request, current task name, and results from dependent tasks.
+
+**Usage:** Dynamically constructed before executing each subtask to provide necessary context.
+
+**Function:** `buildTaskContext()` in TaskExecutor.kt:261-281
+
+**Context Structure:**
+```
+原始用户请求: [original message]
+当前任务: [task name]
+依赖任务结果:
+- 任务 [dep_id] 结果: [result]
+```
+
+### 3.3 Full Task Instruction
+
+**Purpose:** Combines task context with the specific task instruction to create a complete prompt for subtask execution.
+
+**Usage:** Used when sending a subtask to the AI for execution.
+
+**Function:** `buildFullInstruction()` in TaskExecutor.kt:286-295
+
+```
+[context information]
+
+请根据以上上下文信息，执行以下具体任务:
+[task instruction]
+
+请专注于完成这个特定的子任务，你的回答将作为整个计划的一部分。
+```
+
+### 3.4 Final Summary Instruction
+
+**Purpose:** Constructs the final summary prompt that integrates all subtask results into a coherent final answer.
+
+**Usage:** Executed after all subtasks complete to synthesize results.
+
+**Function:** `executeFinalSummary()` in TaskExecutor.kt:314-321
+
+```
+[summary context with all task results]
+
+请根据以上所有子任务的执行结果，完成以下汇总任务:
+[final_summary_instruction from plan]
+
+请提供一个完整、连贯的最终回答。
+```
+
+### 3.5 Summary Context Building
+
+**Purpose:** Builds the context for final summary by collecting results from all leaf tasks (tasks that no other tasks depend on).
+
+**Usage:** Automatically invoked before final summary execution.
+
+**Function:** `buildSummaryContext()` in TaskExecutor.kt:348-374
+
+**Context Structure:**
+```
+原始用户请求: [original message]
+各关键子任务执行结果:
+- [task name]: [result]
+- [task name]: [result]
+...
+```
+
+**Strategy:** Uses only leaf task results when available; otherwise falls back to all task results.
+
+---
+
