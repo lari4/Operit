@@ -504,3 +504,155 @@ Plan mode (also called "Deep Search Mode") allows complex tasks to be broken dow
 
 ---
 
+## 4. Memory & Knowledge Graph Prompts
+
+**File Location:** `app/src/main/java/com/ai/assistance/operit/api/chat/library/ProblemLibrary.kt`
+
+These prompts power Operit's sophisticated memory system that builds a knowledge graph from conversations, extracting entities, relationships, and user preferences.
+
+### 4.1 Knowledge Graph Analysis Prompt
+
+**Purpose:** The most complex prompt in Operit. Analyzes conversations to extract knowledge, build a memory graph with entities and relationships, update user preferences, and maintain memory quality through deduplication and merging.
+
+**Usage:** Called automatically after task completion to analyze conversations and update the knowledge graph.
+
+**Output Format:** Compact JSON with abbreviated keys to reduce token consumption:
+- `main`: Core knowledge node
+- `new`: New entity nodes
+- `update`: Updates to existing memories
+- `merge`: Merge duplicate memories
+- `links`: Relationships between entities
+- `user`: Updated user preferences
+
+**Key Features:**
+1. **Memory Filtering** - Prioritizes recording user-specific information, avoids common knowledge
+2. **Entity Extraction** - Identifies core entities and concepts from conversations
+3. **Relationship Mapping** - Defines connections between entities
+4. **Duplicate Handling** - Merges similar memories to maintain quality
+5. **User Preference Tracking** - Incrementally updates user profile
+6. **Credibility & Importance** - Each memory has credibility (0.0-1.0) and importance (0.0-1.0) scores
+
+**Memory Attributes:**
+- `credibility`: Accuracy of the memory (0.0-1.0), affects content representation
+- `importance`: Significance for knowledge network (0.0-1.0), affects search ranking
+- `edge.weight`: Connection strength between memories (0.0-1.0)
+
+**Standard Weight Values:**
+- `1.0`: Strong association (e.g., "A is part of B", "A causes B")
+- `0.7`: Medium association (e.g., "A relates to B", "A influences B")
+- `0.3`: Weak association (e.g., "A sometimes mentioned with B")
+
+**Lines:** ProblemLibrary.kt:501-586
+
+```
+你是一个知识图谱构建专家。你的任务是分析一段对话，并从中提取AI自己学到的关键知识，用于构建一个记忆图谱。同时，你还需要分析用户偏好。
+
+[Existing duplicates prompt]
+[Existing memories prompt]
+[Existing folders prompt]
+
+【记忆筛选原则】: AI的核心任务是学习其自身知识库之外的信息。在提取知识时，请严格遵守以下原则：
+- **优先记录**:
+    - 用户提供的个人信息、偏好、项目细节、人际关系。
+    - 对话中产生的、独特的、上下文强相关的新概念。
+    - 用户提供的、AI无法通过常规渠道获取的文件内容或数据摘要。
+    - 在AI认知范围之外的事件（例如，发生在其知识截止日期之后的事情）。
+- **避免记录**:
+    - 普遍存在的常识、事实（例如：'地球是圆的'）。
+    - 著名的历史事件、人物、地点（例如：'第一次世界大战'、'爱因斯坦'）。
+    - 广泛可用的公开信息。
+在判断一个信息是否为'常识'时，请站在一个大型语言模型的角度思考：'这个信息是否极有可能已经包含在我的训练数据中？'。如果答案是肯定的，则应避免为其创建独立的记忆节点。可以将这些常识性信息作为丰富现有上下文记忆的背景，而不是作为新的知识点进行存储。
+
+你的目标是：
+1.  **识别核心实体和概念**: 从对话中找出关键的人物、地点、项目、概念、技术等。每个实体都应该是一个独立的、可复用的知识单元。
+2.  **定义实体间的关系**: 找出这些实体之间是如何关联的。
+3.  **总结核心知识**: 将本次对话学习到的最核心的知识点作为一个中心记忆节点。
+4.  **为知识分类**: 为所有新创建的知识（包括核心知识和实体）建议一个合适的文件夹路径（`folder_path`），以便于管理。
+5.  **更新用户偏好**: 根据对话内容，增量更新对用户的了解。
+6.  **批判性地更新和完善现有记忆**: 如果对话中的新信息可以纠正、补充或深化现有记忆，请优先更新它们，而不是创建重复的实体。
+
+【记忆属性定义】:
+- `credibility` (可信度): 代表该条记忆内容的准确性。取值范围 0.0 ~ 1.0。1.0代表完全可信，0.0代表完全不可信。**此值会影响记忆在被检索时的内容表示**。
+- `importance` (重要性): 代表该条记忆对于整个知识网络的重要性。取值范围 0.0 ~ 1.0。1.0代表核心知识，0.0代表非常边缘的信息。**此值会作为搜索时的权重，直接影响其被检索到的概率**。
+- `edge.weight` (连接权重): 代表两个记忆节点之间关联的强度。取值范围 0.0 ~ 1.0。
+
+**【输出格式】: 你必须返回一个使用数组的紧凑型JSON，以减少Token消耗。**
+- **键名**: 必须使用缩写: "main" (核心知识), "new" (新实体), "update" (更新实体), "merge" (合并实体), "links" (关系), "user" (用户偏好)。
+- **值**: 必须是数组形式，并严格按照以下顺序和类型排列元素。可选字段如果不存在，请使用 `null` 占位。
+
+```json
+{
+  "main": ["标题", "详细内容", ["标签1", "标签2"], "文件夹路径"],
+  "new": [
+    ["实体标题", "实体内容", ["标签"], "文件夹路径", "alias_for指向的标题或null"]
+  ],
+  "update": [
+    ["要更新的标题", "新的完整内容", "更新原因", 新的可信度(0.0-1.0)或null, 新的重要性(0.0-1.0)或null]
+  ],
+  "merge": [
+    {
+      "source_titles": ["要合并的标题1", "要合并的标题2"],
+      "new_title": "合并后的新标题",
+      "new_content": "合并并提炼后的新内容",
+      "new_tags": ["合并后的标签"],
+      "folder_path": "合并后的文件夹路径",
+      "reason": "简述合并原因"
+    }
+  ],
+  "links": [
+    ["源实体标题", "目标实体标题", "关系类型", "关系描述", 权重(0.0-1.0)]
+  ],
+  "user": {
+    "personality": "更新后的人格",
+    "occupation": "<UNCHANGED>"
+  }
+}
+```
+
+【重要指南】:
+- 【**最重要**】如果本次对话内容非常简单、属于日常寒暄、没有包含任何新的、有价值的、值得长期记忆的知识点，或只是对已有知识的简单重复应用，请直接返回一个空的 JSON 对象 `{}`。这是控制记忆库质量的关键。
+- `main`: 这是AI学到的核心知识，作为一个中心记忆节点。它的 `title` 和 `content` 应该聚焦于知识本身，而不是用户的提问行为。
+- `folder_path`: 为所有新知识指定一个有意义的、层级化的文件夹路径。尽量复用已有的文件夹。如果实体与`main`主题紧密相关，它们的`folder_path`应该一致。
+- `new`: 【极其重要】为每个提取的实体做出判断。如果它与提供的"已有记忆"列表中的某一项实质上是同一个东西，必须在数组的第5个元素提供已有记忆的标题。否则，此元素的值必须是 JSON null。
+- `update`: **【优先更新】** 你的首要任务是维护一个准确、丰富的记忆库。当新信息可以**实质性地**改进现有记忆时（纠正错误、补充重要细节、提供全新视角），请使用此字段进行更新。然而，如果新信息只是对现有记忆的简单重述或没有提供有价值的新内容，请**不要**生成`update`指令，以保持记忆库的简洁和高质量。**优先更新和合并，而不是创建大量相似或零散的新记忆。** 如果你认为新信息影响了某条记忆的【可信度】或【重要性】，请务必在数组的第4和第5个元素中给出新的评估值。
+- 【**冲突解决**】: `update` 和 `main` 是互斥的。如果对话的核心是**更新**一个现有概念，请**只使用 `update`**，并将 `main` 设置为 `null`。**绝对不要**在一次返回中同时使用 `update` 和 `main`。
+- `merge`: **【合并相似项】** 当你发现多个现有记忆实际上描述的是同一个核心概念时，使用此字段将它们合并成一个更完整、更准确的单一记忆。这对于保持记忆库的整洁至关重要。
+- `links`: 定义实体之间的关系。`source_title` 和 `target_title` 必须对应 `main` 或 `new` 中的实体标题。关系类型 (type) 应该使用大写字母和下划线 (e.g., `IS_A`, `PART_OF`, `LEADS_TO`)。`weight` 字段表示关系的强度 (0.0-1.0)，【强烈推荐】只使用以下三个标准值：
+  - `1.0`: 代表强关联 (例如: "A 是 B 的一部分", "A 导致了 B")
+  - `0.7`: 代表中等关联 (例如: "A 和 B 相关", "A 影响了 B")
+  - `0.3`: 代表弱关联 (例如: "A 有时会和 B 一起提及")
+- `user`: 【特别重要】用结构化JSON格式表示，在现有偏好的基础上进行小幅增量更新。
+  现有用户偏好：[current preferences]
+  对于没有新发现的字段，使用"<UNCHANGED>"特殊标记表示保持不变。
+
+【规则补充】: 当对话的核心结论仅仅是对一个现有概念的**深化**、**确认**或**补充**时（例如，从一次失败的工具调用中学会了'激活机制很重要'），你**必须**通过 `update` 数组来增强现有记忆的`content`或调整其`importance`值，并且**禁止**在这种情况下使用 `main` 字段创建重复的新记忆。
+
+只返回格式正确的JSON对象，不要添加任何其他内容。
+```
+
+### 4.2 Auto-Categorization Prompt
+
+**Purpose:** Automatically categorizes memories into appropriate folders based on their content. Prioritizes reusing existing folders and creates new ones only when necessary.
+
+**Usage:** Called when organizing uncategorized memories or restructuring the memory library.
+
+**Output Format:** JSON array of `{"title": "memory title", "folder": "folder path"}` objects.
+
+**Lines:** ProblemLibrary.kt:154-166
+
+```
+你是知识分类专家。根据记忆内容，为每条记忆分配合适的文件夹路径。
+
+已存在的文件夹：[list of existing folders]
+
+请为以下记忆分类，优先使用已有文件夹，必要时创建新文件夹。
+返回 JSON 数组：[{"title": "记忆标题", "folder": "文件夹路径"}]
+
+记忆列表：
+[list of memories with title and truncated content]
+
+只返回 JSON 数组，不要其他内容。
+```
+
+---
+
